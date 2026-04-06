@@ -20,18 +20,10 @@
         <div class="brand-kicker">ETS TOEIC VOCAB</div>
         <h1>기출보카단어장</h1>
       </div>
-      <button id="menuOpenBtn" class="menu-btn" type="button" aria-label="메뉴 열기">☰</button>
+      <button id="menuOpenBtn" class="menu-btn" type="button" aria-label="메뉴 열기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
     </header>
-
-    <section class="tabs-card shell-card">
-      <div class="tabs" id="tabs">
-        <button class="tab-btn active" data-tab="home" type="button">메인</button>
-        <button class="tab-btn" data-tab="list" type="button">단어장</button>
-        <button class="tab-btn" data-tab="flash" type="button">암기</button>
-        <button class="tab-btn" data-tab="quiz" type="button">시험</button>
-        <button class="tab-btn" data-tab="wrong" type="button">오답노트</button>
-      </div>
-    </section>
 
     <section id="loadingPanel" class="shell-card loading-panel">
       <div class="loader"></div>
@@ -43,19 +35,13 @@
 
     <main class="main-area">
       <section id="tab-home" class="content-card shell-card hidden">
-        <div class="home-hero">
+        <div class="home-hero single-column">
           <div class="home-copy">
             <div class="brand-kicker">HOME</div>
             <h2>가볍게 시작하기</h2>
             <p class="home-text">처음에는 DAY를 선택하지 않은 상태로 시작합니다. 오른쪽 위 메뉴에서 DAY를 고른 뒤 단어장, 암기, 시험으로 들어가세요.</p>
-            <div class="home-actions wrap">
-              <button id="homeOpenListBtn" class="btn primary" type="button">단어장</button>
-              <button id="homeOpenFlashBtn" class="btn" type="button">암기</button>
-              <button id="homeOpenQuizBtn" class="btn" type="button">시험</button>
-              <button id="homeOpenWrongBtn" class="btn" type="button">오답노트</button>
-            </div>
           </div>
-          <div class="home-info-grid">
+          <div class="home-info-grid compact-3">
             <article class="home-info-card">
               <span class="stat-label">총 단어</span>
               <strong id="homeTotalWords">-</strong>
@@ -108,14 +94,17 @@
           </div>
         </div>
         <div id="flashcard" class="flashcard"></div>
-        <div class="action-bar wrap">
-          <button class="btn" id="flashPrevBtn" type="button">이전</button>
-          <button class="btn primary" id="flashToggleBtn" type="button">정답 보기</button>
-          <button class="btn" id="flashUsBtn" type="button">🔊 US</button>
-          <button class="btn" id="flashUkBtn" type="button">🔊 UK</button>
-          <button class="btn success" id="flashKnowBtn" type="button">암기함</button>
-          <button class="btn danger" id="flashMissBtn" type="button">헷갈림</button>
-          <button class="btn" id="flashNextBtn" type="button">다음</button>
+        <div class="flash-action-stack">
+          <div class="flash-row flash-row-top">
+            <button class="btn" id="flashPrevBtn" type="button">이전</button>
+            <button class="btn primary" id="flashNextBtn" type="button">다음</button>
+          </div>
+          <div class="flash-row flash-row-bottom">
+            <button class="btn icon-label-btn" id="flashUsBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h4l5-4v12l-5-4H5z" fill="currentColor"></path><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path><path d="M18.8 7a6.8 6.8 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg><span>US</span></button>
+            <button class="btn icon-label-btn" id="flashUkBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h4l5-4v12l-5-4H5z" fill="currentColor"></path><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path><path d="M18.8 7a6.8 6.8 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg><span>UK</span></button>
+            <button class="btn success" id="flashKnowBtn" type="button">학습완료</button>
+            <button class="btn danger" id="flashMissBtn" type="button">학습중</button>
+          </div>
         </div>
       </section>
 
@@ -131,42 +120,43 @@
             <span class="score-pill" id="quizWrongStat">오답 0</span>
           </div>
         </div>
-        <div class="quiz-controls">
-          <label class="field-block">
-            <span class="field-label">시험 방식</span>
-            <select id="quizModeSelect" class="select">
-              <option value="multiple">객관식</option>
-              <option value="subjective">주관식</option>
-            </select>
-          </label>
-          <label class="field-block">
-            <span class="field-label">문제 방향</span>
-            <select id="quizDirectionSelect" class="select">
-              <option value="engToKor">영어 → 뜻</option>
-              <option value="korToEng">뜻 → 영어</option>
-            </select>
-          </label>
-          <label class="field-block">
-            <span class="field-label">출제 범위</span>
-            <select id="quizSourceSelect" class="select">
-              <option value="current">현재 선택 범위</option>
-              <option value="wrong">오답노트만</option>
-            </select>
-          </label>
-          <label class="field-block">
-            <span class="field-label">문항 수</span>
-            <select id="quizCountSelect" class="select">
-              <option value="10">10문항</option>
-              <option value="20" selected>20문항</option>
-              <option value="30">30문항</option>
-              <option value="50">50문항</option>
-            </select>
-          </label>
-        </div>
+        <details class="quiz-settings" id="quizSettings">
+          <summary>시험 설정</summary>
+          <div class="quiz-controls">
+            <label class="field-block">
+              <span class="field-label">시험 방식</span>
+              <select id="quizModeSelect" class="select">
+                <option value="multiple">객관식</option>
+                <option value="subjective">주관식</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span class="field-label">문제 방향</span>
+              <select id="quizDirectionSelect" class="select">
+                <option value="engToKor">영어 → 뜻</option>
+                <option value="korToEng">뜻 → 영어</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span class="field-label">출제 범위</span>
+              <select id="quizSourceSelect" class="select">
+                <option value="current">현재 선택 범위</option>
+                <option value="wrong">오답노트만</option>
+              </select>
+            </label>
+            <label class="field-block">
+              <span class="field-label">문항 수</span>
+              <select id="quizCountSelect" class="select">
+                <option value="10">10문항</option>
+                <option value="20" selected>20문항</option>
+                <option value="30">30문항</option>
+                <option value="50">50문항</option>
+              </select>
+            </label>
+          </div>
+        </details>
         <div class="action-bar wrap quiz-start-bar">
           <button class="btn primary" id="startQuizBtn" type="button">시험 시작</button>
-          <button class="btn" id="speakQuizUsBtn" type="button">🔊 US</button>
-          <button class="btn" id="speakQuizUkBtn" type="button">🔊 UK</button>
         </div>
         <div id="quizCard" class="quiz-card empty-state">시험 시작을 눌러 주세요.</div>
       </section>
@@ -194,16 +184,19 @@
       <button id="drawerCloseBtn" class="drawer-close" type="button" aria-label="메뉴 닫기">✕</button>
     </div>
     <div class="drawer-scroll">
-      <section class="drawer-section stack-12">
-        <div class="section-head block-head">
-          <h3>테마 / 설치</h3>
+      <section class="drawer-section stack-12 compact-settings">
+        <div class="drawer-line drawer-line-inline">
+          <span class="drawer-label">테마</span>
+          <div class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+            <button type="button" class="theme-btn" data-theme-choice="light">화이트</button>
+            <button type="button" class="theme-btn" data-theme-choice="dark">다크</button>
+            <button type="button" class="theme-btn" data-theme-choice="auto">자동</button>
+          </div>
         </div>
-        <div class="theme-toggle" id="themeToggle" aria-label="테마 전환">
-          <button type="button" class="theme-btn" data-theme-choice="light">화이트</button>
-          <button type="button" class="theme-btn" data-theme-choice="dark">다크</button>
-          <button type="button" class="theme-btn" data-theme-choice="auto">자동</button>
+        <div class="drawer-line drawer-line-inline install-line">
+          <span class="drawer-label">설치</span>
+          <button id="installAppBtn" class="btn primary install-inline-btn" type="button" disabled>앱 설치</button>
         </div>
-        <button id="installAppBtn" class="btn primary full" type="button" disabled>앱 설치</button>
         <p id="installStatus" class="install-status">설치 상태 확인 중…</p>
       </section>
 
@@ -270,11 +263,34 @@
 
       <section class="drawer-section tip-box">
         <h3>TTS 안내</h3>
-        <p>정적 GitHub Pages 앱이라 브라우저에 설치된 음성을 사용합니다. 이번 버전은 기기에 있는 US/UK 음성을 더 우선해서 고르게 했습니다.</p>
+        <p>정적 GitHub Pages 앱이라 브라우저에 설치된 음성을 사용합니다. 기기에 따라 US/UK 차이가 작을 수 있습니다.</p>
         <p id="ttsStatus" class="install-status">음성 목록 확인 중…</p>
       </section>
     </div>
   </aside>
+
+  <nav class="bottom-nav shell-card" id="tabs" aria-label="하단 탐색">
+    <button class="tab-btn active" data-tab="home" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.8v-5.5H9.8V21H5a1 1 0 0 1-1-1z" fill="currentColor"/></svg>
+      <span>메인</span>
+    </button>
+    <button class="tab-btn" data-tab="list" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v2H6zm0 5h12v2H6zm0 5h12v2H6z" fill="currentColor"/></svg>
+      <span>단어장</span>
+    </button>
+    <button class="tab-btn" data-tab="flash" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h9a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3zm1 4v8l7-4z" fill="currentColor"/></svg>
+      <span>암기</span>
+    </button>
+    <button class="tab-btn" data-tab="quiz" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9 9 9 0 0 1 9-9Zm0 14.3a1.15 1.15 0 1 0 1.15 1.15A1.15 1.15 0 0 0 12 17.3Zm0-10a4.2 4.2 0 0 0-4.2 4.2h2.2a2 2 0 1 1 3.15 1.63c-1.26.87-1.95 1.6-1.95 3.07v.3h2.2v-.2c0-.8.26-1.1 1-1.61A4.2 4.2 0 0 0 12 7.3Z" fill="currentColor"/></svg>
+      <span>시험</span>
+    </button>
+    <button class="tab-btn" data-tab="wrong" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.42 9.67 8 11 4.58-1.33 8-6 8-11V6zm-2.2 6.8 2.2 2.2 2.2-2.2 1.4 1.4-2.2 2.2 2.2 2.2-1.4 1.4-2.2-2.2-2.2 2.2-1.4-1.4 2.2-2.2-2.2-2.2z" fill="currentColor"/></svg>
+      <span>오답노트</span>
+    </button>
+  </nav>
 
   <script src="./app.js"></script>
 </body>

@@ -82,6 +82,17 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+function iconSvg(name) {
+  const icons = {
+    speaker: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h4l5-4v12l-5-4H5z" fill="currentColor"></path><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path><path d="M18.8 7a6.8 6.8 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>'
+  };
+  return icons[name] || '';
+}
+
+function speakerLabel(label) {
+  return `${iconSvg("speaker")}<span>${escapeHtml(label)}</span>`;
+}
+
 function stripPos(text) {
   return String(text || "")
     .replace(/(^|\n)\s*([A-Za-z]{1,5}\.)\s*/g, "$1")
@@ -347,7 +358,7 @@ function buildWordCard(item) {
         <div class="word-meta">
           <span class="meta-pill">Day ${item.day}</span>
           ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
-          ${known ? '<span class="meta-pill">암기됨</span>' : ''}
+          ${known ? '<span class="meta-pill">학습완료</span>' : ''}
           ${wrong ? `<span class="meta-pill">오답 ${wrong.count || 1}회</span>` : ''}
         </div>
       </div>
@@ -356,10 +367,10 @@ function buildWordCard(item) {
         <div class="meaning-cell">${escapeHtml(displayMeaning(item))}</div>
       </div>
       <div class="table-actions">
-        <button class="icon-btn" data-action="speak-us" data-id="${item.id}" type="button">US</button>
-        <button class="icon-btn" data-action="speak-uk" data-id="${item.id}" type="button">UK</button>
-        <button class="icon-btn" data-action="known" data-id="${item.id}" type="button">암기</button>
-        <button class="icon-btn" data-action="wrong" data-id="${item.id}" type="button">오답</button>
+        <button class="icon-btn icon-label-btn" data-action="speak-us" data-id="${item.id}" type="button">${speakerLabel("US")}</button>
+        <button class="icon-btn icon-label-btn" data-action="speak-uk" data-id="${item.id}" type="button">${speakerLabel("UK")}</button>
+        <button class="icon-btn" data-action="known" data-id="${item.id}" type="button">학습완료</button>
+        <button class="icon-btn" data-action="wrong" data-id="${item.id}" type="button">학습중</button>
       </div>
     </article>`;
 }
@@ -403,6 +414,7 @@ function renderFlashcard() {
   if (!hasSelection()) {
     els.flashSummary.textContent = "DAY를 선택하면 암기 카드를 시작할 수 있습니다.";
     els.flashcard.innerHTML = renderSelectionPrompt("암기 카드 범위를 먼저 골라 주세요.", "오른쪽 위 메뉴에서 DAY를 체크하거나 Day 1부터 바로 시작할 수 있습니다.");
+    els.flashcard.classList.remove("is-revealed", "is-clickable");
     return;
   }
   if (!state.flash.order.length) resetFlashOrder();
@@ -410,19 +422,22 @@ function renderFlashcard() {
   els.flashSummary.textContent = `현재 범위 ${list.length.toLocaleString()}개 · ${Math.min(state.flash.index + 1, Math.max(1, state.flash.order.length))}/${Math.max(1, state.flash.order.length)}`;
   if (!item) {
     els.flashcard.innerHTML = `<div class="empty-state">표시할 카드가 없습니다.</div>`;
+    els.flashcard.classList.remove("is-revealed", "is-clickable");
     return;
   }
   const known = state.known.has(item.id);
   const wrong = !!state.wrongs[item.id];
+  els.flashcard.classList.toggle("is-revealed", state.flash.reveal);
+  els.flashcard.classList.add("is-clickable");
   els.flashcard.innerHTML = `
     <div class="wrong-meta">
       <span class="meta-pill">Day ${item.day}</span>
       ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
-      ${known ? '<span class="meta-pill">암기됨</span>' : ''}
+      ${known ? '<span class="meta-pill">학습완료</span>' : ''}
       ${wrong ? '<span class="meta-pill">오답노트 포함</span>' : ''}
     </div>
     <div class="flash-word">${escapeHtml(item.word)}</div>
-    <div class="flash-answer">${state.flash.reveal ? escapeHtml(displayMeaning(item)) : '정답 보기를 눌러 뜻을 확인하세요.'}</div>
+    <div class="flash-answer">${state.flash.reveal ? escapeHtml(displayMeaning(item)) : '카드를 눌러 뜻 보기'}</div>
   `;
 }
 
@@ -474,6 +489,7 @@ function startQuiz() {
   state.quiz.answered = false;
   state.quiz.lastFeedback = "";
   state.quiz.userAnswer = "";
+  document.getElementById("quizSettings")?.removeAttribute("open");
   nextQuizQuestion(true);
 }
 
@@ -553,17 +569,17 @@ function renderQuizCard() {
   let body = "";
   if (state.quiz.mode === "multiple") {
     body = `
-      <div class="choice-grid">
+      <div class="choice-grid ${state.quiz.answered ? 'answered' : ''}">
         ${state.quiz.choices.map((choice) => `
-          <button class="choice-btn" type="button" data-choice-id="${choice.id}">${escapeHtml(choiceLabel(choice, state.quiz.direction))}</button>
+          <button class="choice-btn" type="button" data-choice-id="${choice.id}" ${state.quiz.answered ? 'disabled' : ''}>${escapeHtml(choiceLabel(choice, state.quiz.direction))}</button>
         `).join("")}
       </div>`;
   } else {
     body = `
-      <div class="answer-box">
-        <input id="subjectiveAnswerInput" class="input" type="text" placeholder="정답 입력" autocomplete="off" />
-        <button id="submitSubjectiveBtn" class="btn primary" type="button">제출</button>
-      </div>`;
+      <form id="subjectiveAnswerForm" class="answer-box" autocomplete="off">
+        <textarea id="subjectiveAnswerInput" class="input answer-textarea" rows="1" placeholder="정답 입력" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">${escapeHtml(state.quiz.userAnswer || "")}</textarea>
+        <button id="submitSubjectiveBtn" class="btn primary" type="submit">제출</button>
+      </form>`;
   }
 
   els.quizCard.innerHTML = `
@@ -571,32 +587,37 @@ function renderQuizCard() {
     <div class="quiz-question">${escapeHtml(questionLabel(item, state.quiz.direction))}</div>
     ${body}
     ${state.quiz.answered ? `<div class="feedback ${feedbackClass}">${escapeHtml(state.quiz.lastFeedback)}</div>` : ""}
-    <div class="action-bar wrap">
-      <button class="btn" id="quizRevealUs" type="button">🔊 US</button>
-      <button class="btn" id="quizRevealUk" type="button">🔊 UK</button>
+    <div class="action-bar wrap quiz-next-row">
       ${state.quiz.answered ? '<button class="btn primary" id="quizNextBtnInline" type="button">다음 문제</button>' : ''}
     </div>
   `;
 
   els.quizCard.querySelectorAll("[data-choice-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (state.quiz.answered) return;
       const choice = state.byId.get(btn.dataset.choiceId);
       submitQuizAnswer({ choice: choiceLabel(choice, state.quiz.direction) });
     });
   });
 
   const input = document.getElementById("subjectiveAnswerInput");
-  const submitBtn = document.getElementById("submitSubjectiveBtn");
-  if (input && submitBtn) {
-    submitBtn.addEventListener("click", () => submitQuizAnswer({ text: input.value }));
+  const form = document.getElementById("subjectiveAnswerForm");
+  if (input && form) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (state.quiz.answered) return;
+      submitQuizAnswer({ text: input.value });
+    });
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submitQuizAnswer({ text: input.value });
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (state.quiz.answered) nextQuizQuestion(false);
+        else submitQuizAnswer({ text: input.value });
+      }
     });
     setTimeout(() => input.focus(), 20);
   }
 
-  document.getElementById("quizRevealUs")?.addEventListener("click", () => speak(item.word, "en-US"));
-  document.getElementById("quizRevealUk")?.addEventListener("click", () => speak(item.word, "en-GB"));
   document.getElementById("quizNextBtnInline")?.addEventListener("click", () => nextQuizQuestion(false));
 }
 
@@ -634,9 +655,9 @@ function renderWrongTab() {
         </div>
         <div class="subtext">최근 오답: ${escapeHtml(formatDateTime(info.lastWrong))}</div>
         <div class="action-bar wrap">
-          <button class="btn" data-action="speak-us" data-id="${item.id}" type="button">🔊 US</button>
-          <button class="btn" data-action="speak-uk" data-id="${item.id}" type="button">🔊 UK</button>
-          <button class="btn success" data-action="known" data-id="${item.id}" type="button">암기 체크</button>
+          <button class="btn icon-label-btn" data-action="speak-us" data-id="${item.id}" type="button">${speakerLabel("US")}</button>
+          <button class="btn icon-label-btn" data-action="speak-uk" data-id="${item.id}" type="button">${speakerLabel("UK")}</button>
+          <button class="btn success" data-action="known" data-id="${item.id}" type="button">학습완료</button>
           <button class="btn danger" data-action="wrong-remove" data-id="${item.id}" type="button">오답 삭제</button>
         </div>
       </article>`;
@@ -874,6 +895,13 @@ function bindEvents() {
   document.getElementById("drawerBackdrop")?.addEventListener("click", () => setDrawerOpen(false));
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") setDrawerOpen(false);
+    if (e.key === "Enter" && !e.shiftKey && state.tab === "quiz" && state.quiz.answered && !document.getElementById("subjectiveAnswerInput")) {
+      const nextBtn = document.getElementById("quizNextBtnInline");
+      if (nextBtn) {
+        e.preventDefault();
+        nextQuizQuestion(false);
+      }
+    }
   });
 
   els.dayGrid.addEventListener("click", (e) => {
@@ -892,6 +920,11 @@ function bindEvents() {
   els.wordList.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action][data-id]");
     if (btn) handleItemAction(btn.dataset.action, btn.dataset.id);
+  });
+  document.getElementById("flashcard").addEventListener("click", () => {
+    if (!hasSelection() || !currentFlashItem()) return;
+    state.flash.reveal = !state.flash.reveal;
+    renderFlashcard();
   });
   els.wrongList.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action][data-id]");
@@ -956,10 +989,6 @@ function bindEvents() {
   document.getElementById("exportWrongJsonBtn").addEventListener("click", exportWrongJson);
   document.getElementById("flashPrevBtn").addEventListener("click", () => stepFlash(-1));
   document.getElementById("flashNextBtn").addEventListener("click", () => stepFlash(1));
-  document.getElementById("flashToggleBtn").addEventListener("click", () => {
-    state.flash.reveal = !state.flash.reveal;
-    renderFlashcard();
-  });
   document.getElementById("flashShuffleBtn").addEventListener("click", () => {
     state.flash.order = shuffle(getSelectedWords().map((item) => item.id));
     state.flash.index = 0;
@@ -984,8 +1013,6 @@ function bindEvents() {
   els.quizSourceSelect.addEventListener("change", () => state.quiz.source = els.quizSourceSelect.value);
   els.quizCountSelect.addEventListener("change", () => state.quiz.count = Number(els.quizCountSelect.value));
   document.getElementById("startQuizBtn").addEventListener("click", startQuiz);
-  document.getElementById("speakQuizUsBtn").addEventListener("click", () => state.quiz.current && speak(state.quiz.current.word, "en-US"));
-  document.getElementById("speakQuizUkBtn").addEventListener("click", () => state.quiz.current && speak(state.quiz.current.word, "en-GB"));
   document.getElementById("practiceWrongBtn").addEventListener("click", () => {
     setActiveTab("quiz");
     els.quizSourceSelect.value = "wrong";
