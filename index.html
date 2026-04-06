@@ -14,7 +14,7 @@
   <title>ETS 토익 기출 보카</title>
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell home-mode" id="appShell">
     <header class="topbar shell-card">
       <div class="brand-block">
         <div class="brand-kicker">ETS TOEIC VOCAB</div>
@@ -46,7 +46,7 @@
             <h2>DAY 선택</h2>
             <div class="mini-actions">
               <button class="text-btn" id="selectAllDaysBtn" type="button">전체</button>
-              <button class="text-btn" id="clearDaysBtn" type="button">1일차만</button>
+              <button class="text-btn" id="clearDaysBtn" type="button">전체 해제</button>
             </div>
           </div>
           <div id="dayGrid" class="day-grid"></div>
@@ -111,7 +111,8 @@
 
         <section class="tabs-card shell-card">
           <div class="tabs" id="tabs">
-            <button class="tab-btn active" data-tab="list" type="button">단어장</button>
+            <button class="tab-btn active" data-tab="home" type="button">홈</button>
+            <button class="tab-btn" data-tab="list" type="button">단어장</button>
             <button class="tab-btn" data-tab="flash" type="button">암기</button>
             <button class="tab-btn" data-tab="quiz" type="button">시험</button>
             <button class="tab-btn" data-tab="wrong" type="button">오답노트</button>
@@ -123,6 +124,39 @@
           <div>
             <strong>단어 데이터를 불러오는 중…</strong>
             <p>처음 한 번만 조금 기다리면 그다음부터는 훨씬 가볍게 열립니다.</p>
+          </div>
+        </section>
+
+        <section id="tab-home" class="content-card shell-card home-panel hidden">
+          <div class="home-hero">
+            <div class="home-copy">
+              <div class="brand-kicker">HOME</div>
+              <h2>토익 보카 학습 시작</h2>
+              <p class="home-text">처음에는 DAY를 하나도 선택하지 않은 상태로 시작합니다. 단어장, 암기, 시험에 들어간 뒤 원하는 DAY만 골라서 가볍게 학습하세요.</p>
+              <div class="home-actions wrap">
+                <button id="homeOpenListBtn" class="btn primary" type="button">단어장 열기</button>
+                <button id="homeOpenFlashBtn" class="btn" type="button">암기 카드</button>
+                <button id="homeOpenQuizBtn" class="btn" type="button">단어 시험</button>
+                <button id="homeOpenWrongBtn" class="btn" type="button">오답노트</button>
+              </div>
+            </div>
+            <div class="home-info-grid">
+              <article class="home-info-card">
+                <span class="stat-label">전체 수록</span>
+                <strong id="homeTotalWords">-</strong>
+                <p>업로드한 XLS 기준 전체 단어 수</p>
+              </article>
+              <article class="home-info-card">
+                <span class="stat-label">현재 선택 DAY</span>
+                <strong id="homeSelectedDays">없음</strong>
+                <p>DAY를 고르기 전까지는 목록을 렌더링하지 않습니다.</p>
+              </article>
+              <article class="home-info-card">
+                <span class="stat-label">바로 시작</span>
+                <strong>추천</strong>
+                <p>DAY 1부터 시작하거나, 필요한 DAY만 체크해서 보세요.</p>
+              </article>
+            </div>
           </div>
         </section>
 

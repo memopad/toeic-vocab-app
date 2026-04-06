@@ -14,7 +14,7 @@ const state = {
   selectedDays: new Set(),
   search: "",
   sort: "day",
-  tab: "list",
+  tab: "home",
   page: 1,
   pageSize: 30,
   viewOrderSeed: 1,
@@ -169,12 +169,53 @@ function buildDataIndexes(data) {
   }));
   state.byId = new Map(state.data.map((item) => [item.id, item]));
   state.days = [...new Set(state.data.map((item) => item.day))].sort((a, b) => a - b);
-  state.selectedDays = new Set(state.days);
+  state.selectedDays = new Set();
   invalidateFilteredCache();
 }
 
 function invalidateFilteredCache() {
   state.filteredCacheKey = "";
+}
+
+function describeSelectedDays() {
+  const days = [...state.selectedDays].sort((a, b) => a - b);
+  if (!days.length) return "없음";
+  if (days.length === 1) return `Day ${days[0]}`;
+  if (days.length === state.days.length) return `전체 ${days.length}일`;
+  return `Day ${days[0]} ~ Day ${days[days.length - 1]} 외 ${days.length}일`;
+}
+
+function hasSelection() {
+  return state.selectedDays.size > 0;
+}
+
+function selectDays(days) {
+  state.selectedDays = new Set(days);
+  state.page = 1;
+  invalidateFilteredCache();
+  resetFlashOrder();
+  updateDayGridSelection();
+  renderStats();
+  renderHome();
+  renderActiveTab();
+}
+
+function renderSelectionPrompt(title, description) {
+  return `
+    <div class="empty-state picker-empty">
+      <strong>${escapeHtml(title)}</strong>
+      <p class="subtext">${escapeHtml(description)}</p>
+      <div class="action-bar wrap center">
+        <button class="btn primary" type="button" data-selection-preset="day1">Day 1 선택</button>
+        <button class="btn" type="button" data-selection-preset="all">전체 DAY 선택</button>
+        <button class="btn" type="button" data-selection-preset="home">홈으로</button>
+      </div>
+    </div>`;
+}
+
+function renderHome() {
+  if (els.homeTotalWords) els.homeTotalWords.textContent = state.data.length ? state.data.length.toLocaleString() : '-';
+  if (els.homeSelectedDays) els.homeSelectedDays.textContent = describeSelectedDays();
 }
 
 function getSelectedWords() {
@@ -251,7 +292,7 @@ function initElements() {
     "searchInput", "dayGrid", "sortSelect", "pageSizeSelect", "totalWordsStat", "selectedWordsStat", "wrongCountStat", "knownCountStat",
     "listSummary", "wordList", "pageInfo", "flashSummary", "flashcard", "quizCard", "quizModeSelect", "quizDirectionSelect",
     "quizSourceSelect", "quizCountSelect", "quizProgressStat", "quizCorrectStat", "quizWrongStat", "wrongSummary", "wrongList",
-    "loadingPanel", "installAppBtn", "installStatus"
+    "loadingPanel", "installAppBtn", "installStatus", "homeTotalWords", "homeSelectedDays"
   ];
   ids.forEach((id) => { els[id] = document.getElementById(id); });
 }
@@ -275,10 +316,17 @@ function renderStats() {
   els.selectedWordsStat.textContent = selected.length.toLocaleString();
   els.knownCountStat.textContent = state.known.size.toLocaleString();
   els.wrongCountStat.textContent = Object.keys(state.wrongs).length.toLocaleString();
+  renderHome();
 }
 
 function renderListTab() {
   const list = getSelectedWords();
+  if (!hasSelection()) {
+    els.listSummary.textContent = 'DAY를 선택하면 단어장을 불러옵니다.';
+    els.pageInfo.textContent = '-';
+    els.wordList.innerHTML = renderSelectionPrompt('먼저 DAY를 골라 주세요.', '왼쪽 DAY 선택에서 원하는 범위를 체크하면 그때부터 단어장이 표시됩니다.');
+    return;
+  }
   const totalPages = Math.max(1, Math.ceil(list.length / state.pageSize));
   state.page = Math.min(state.page, totalPages);
   const start = (state.page - 1) * state.pageSize;
@@ -345,6 +393,11 @@ function currentFlashItem() {
 
 function renderFlashcard() {
   const list = getSelectedWords();
+  if (!hasSelection()) {
+    els.flashSummary.textContent = 'DAY를 선택하면 암기 카드를 시작할 수 있습니다.';
+    els.flashcard.innerHTML = renderSelectionPrompt('암기 카드 범위를 먼저 골라 주세요.', '왼쪽에서 DAY를 체크하거나 Day 1부터 바로 시작할 수 있습니다.');
+    return;
+  }
   els.flashSummary.textContent = `현재 범위 ${list.length.toLocaleString()}개 · ${state.flash.index + 1}/${Math.max(1, state.flash.order.length)}`;
   if (!state.flash.order.length) resetFlashOrder();
   const item = currentFlashItem();
@@ -396,7 +449,10 @@ function buildQuizChoices(correctItem, pool, direction) {
 function startQuiz() {
   let pool = getQuizPool();
   if (!pool.length) {
-    els.quizCard.innerHTML = `<div class="empty-state">출제할 단어가 없습니다.</div>`;
+    const message = state.quiz.source === 'wrong'
+      ? '<div class="empty-state">오답노트에 저장된 단어가 없습니다.</div>'
+      : renderSelectionPrompt('시험 범위를 먼저 골라 주세요.', 'DAY를 선택하지 않으면 객관식과 주관식 문제를 만들지 않습니다.');
+    els.quizCard.innerHTML = message;
     updateQuizStats();
     return;
   }
@@ -473,6 +529,10 @@ function submitQuizAnswer(payload) {
 function renderQuizCard() {
   const item = state.quiz.current;
   if (!item) {
+    if (state.quiz.source !== 'wrong' && !hasSelection()) {
+      els.quizCard.innerHTML = renderSelectionPrompt('시험 범위를 먼저 골라 주세요.', '왼쪽 DAY 선택에서 원하는 범위를 체크한 뒤 시험 시작을 눌러 주세요.');
+      return;
+    }
     els.quizCard.innerHTML = `<div class="empty-state">${escapeHtml(state.quiz.lastFeedback || '시험 시작을 눌러 주세요.')}</div>`;
     return;
   }
@@ -576,6 +636,7 @@ function renderWrongTab() {
 }
 
 function renderActiveTab() {
+  if (state.tab === 'home') renderHome();
   if (state.tab === 'list') renderListTab();
   if (state.tab === 'flash') renderFlashcard();
   if (state.tab === 'quiz') renderQuizCard();
@@ -587,13 +648,14 @@ function setActiveTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tabName));
   document.querySelectorAll('[id^="tab-"]').forEach((panel) => panel.classList.add('hidden'));
   document.getElementById(`tab-${tabName}`)?.classList.remove('hidden');
+  document.getElementById('appShell')?.classList.toggle('home-mode', tabName === 'home');
   location.hash = tabName;
   renderActiveTab();
 }
 
 function applyHashTab() {
   const hash = (location.hash || '').replace('#', '').trim();
-  if (['list', 'flash', 'quiz', 'wrong'].includes(hash)) setActiveTab(hash);
+  if (['home', 'list', 'flash', 'quiz', 'wrong'].includes(hash)) setActiveTab(hash);
 }
 
 function speak(text, lang) {
@@ -760,7 +822,6 @@ function bindEvents() {
     const day = Number(btn.dataset.day);
     if (state.selectedDays.has(day)) state.selectedDays.delete(day);
     else state.selectedDays.add(day);
-    if (!state.selectedDays.size) state.selectedDays.add(day);
     state.page = 1;
     invalidateFilteredCache();
     resetFlashOrder();
@@ -777,22 +838,10 @@ function bindEvents() {
     if (btn) handleItemAction(btn.dataset.action, btn.dataset.id);
   });
   document.getElementById('selectAllDaysBtn').addEventListener('click', () => {
-    state.selectedDays = new Set(state.days);
-    state.page = 1;
-    invalidateFilteredCache();
-    resetFlashOrder();
-    updateDayGridSelection();
-    renderStats();
-    renderActiveTab();
+    selectDays(state.days);
   });
   document.getElementById('clearDaysBtn').addEventListener('click', () => {
-    state.selectedDays = new Set([1]);
-    state.page = 1;
-    invalidateFilteredCache();
-    resetFlashOrder();
-    updateDayGridSelection();
-    renderStats();
-    renderActiveTab();
+    selectDays([]);
   });
   els.searchInput.addEventListener('input', (e) => {
     const value = e.target.value.trim();
@@ -897,9 +946,27 @@ function bindEvents() {
     renderWrongTab();
   });
   document.getElementById('goListBtn').addEventListener('click', () => setActiveTab('list'));
+  document.getElementById('homeOpenListBtn')?.addEventListener('click', () => setActiveTab('list'));
+  document.getElementById('homeOpenFlashBtn')?.addEventListener('click', () => setActiveTab('flash'));
+  document.getElementById('homeOpenQuizBtn')?.addEventListener('click', () => setActiveTab('quiz'));
+  document.getElementById('homeOpenWrongBtn')?.addEventListener('click', () => setActiveTab('wrong'));
   document.getElementById('goFlashBtn').addEventListener('click', () => setActiveTab('flash'));
   document.getElementById('goQuizBtn').addEventListener('click', () => setActiveTab('quiz'));
   document.getElementById('goWrongBtn').addEventListener('click', () => setActiveTab('wrong'));
+  document.addEventListener('click', (e) => {
+    const presetBtn = e.target.closest('[data-selection-preset]');
+    if (!presetBtn) return;
+    const preset = presetBtn.dataset.selectionPreset;
+    if (preset === 'day1') {
+      selectDays([1]);
+      if (state.tab === 'home') setActiveTab('list');
+    }
+    if (preset === 'all') {
+      selectDays(state.days);
+      if (state.tab === 'home') setActiveTab('list');
+    }
+    if (preset === 'home') setActiveTab('home');
+  });
   els.installAppBtn.addEventListener('click', tryInstallApp);
   window.addEventListener('hashchange', applyHashTab);
 }
@@ -922,7 +989,7 @@ async function boot() {
     renderStats();
     resetFlashOrder();
     els.loadingPanel.classList.add('hidden');
-    setActiveTab('list');
+    setActiveTab('home');
     applyHashTab();
     registerServiceWorker();
     if ('speechSynthesis' in window) {
