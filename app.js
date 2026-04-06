@@ -1,4 +1,3 @@
-
 const STORAGE_KEYS = {
   wrongs: "toeic_vocab_wrongs_v2",
   wrongsLegacy: "toeic_vocab_wrongs_v1",
@@ -43,6 +42,10 @@ const state = {
     userAnswer: "",
   },
   voices: [],
+  preferredVoices: {
+    us: null,
+    uk: null,
+  },
 };
 
 const els = {};
@@ -84,6 +87,14 @@ function stripPos(text) {
     .replace(/(^|\n)\s*([A-Za-z]{1,5}\.)\s*/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function displayMeaning(item) {
+  return String(item?.meaning || stripPos(item?.meaningRaw || "") || "").trim();
+}
+
+function displayCategory(item) {
+  return String(item?.category || "").trim();
 }
 
 function normKo(text) {
@@ -140,9 +151,7 @@ function getEnglishVariants(word) {
   set.add(normEn(raw.replace(/\([^)]*\)/g, " ")));
   set.add(normEn(raw.replace(/[()]/g, "")));
   raw.split(/[;/]/).forEach((part) => set.add(normEn(part)));
-  if (/\([^)]*\)/.test(raw)) {
-    set.add(normEn(raw.replace(/\(([^)]*)\)/g, "$1")));
-  }
+  if (/\([^)]*\)/.test(raw)) set.add(normEn(raw.replace(/\(([^)]*)\)/g, "$1")));
   return [...set].filter(Boolean);
 }
 
@@ -153,7 +162,7 @@ function isCorrectSubjective(userInput, item, direction) {
     return getEnglishVariants(item.word).some((v) => v === input);
   }
   const input = normKo(userInput);
-  const answer = stripPos(item.meaningRaw);
+  const answer = displayMeaning(item);
   const full = normKo(answer);
   if (full.includes(input)) return true;
   const tokens = answer.split(/[\n,;/]/).map((t) => normKo(t)).filter(Boolean);
@@ -163,8 +172,9 @@ function isCorrectSubjective(userInput, item, direction) {
 function buildDataIndexes(data) {
   state.data = data.map((item) => ({
     ...item,
+    meaning: String(item.meaning || stripPos(item.meaningRaw || "")).trim(),
     _searchWord: String(item.word || "").toLowerCase(),
-    _searchMeaning: String(item.meaningRaw || "").toLowerCase(),
+    _searchMeaning: String(item.meaning || item.meaningRaw || "").toLowerCase(),
     _searchCategory: String(item.category || "").toLowerCase(),
   }));
   state.byId = new Map(state.data.map((item) => [item.id, item]));
@@ -189,6 +199,15 @@ function hasSelection() {
   return state.selectedDays.size > 0;
 }
 
+function setDrawerOpen(open) {
+  const drawer = document.getElementById("controlDrawer");
+  const backdrop = document.getElementById("drawerBackdrop");
+  drawer.classList.toggle("open", open);
+  drawer.setAttribute("aria-hidden", open ? "false" : "true");
+  backdrop.classList.toggle("hidden", !open);
+  document.body.style.overflow = open ? "hidden" : "";
+}
+
 function selectDays(days) {
   state.selectedDays = new Set(days);
   state.page = 1;
@@ -208,13 +227,13 @@ function renderSelectionPrompt(title, description) {
       <div class="action-bar wrap center">
         <button class="btn primary" type="button" data-selection-preset="day1">Day 1 선택</button>
         <button class="btn" type="button" data-selection-preset="all">전체 DAY 선택</button>
-        <button class="btn" type="button" data-selection-preset="home">홈으로</button>
+        <button class="btn" type="button" data-selection-preset="menu">메뉴 열기</button>
       </div>
     </div>`;
 }
 
 function renderHome() {
-  if (els.homeTotalWords) els.homeTotalWords.textContent = state.data.length ? state.data.length.toLocaleString() : '-';
+  if (els.homeTotalWords) els.homeTotalWords.textContent = state.data.length ? state.data.length.toLocaleString() : "-";
   if (els.homeSelectedDays) els.homeSelectedDays.textContent = describeSelectedDays();
 }
 
@@ -233,7 +252,7 @@ function getSelectedWords() {
   if (state.sort === "alpha") {
     list = [...list].sort((a, b) => a.word.localeCompare(b.word));
   } else if (state.sort === "korean") {
-    list = [...list].sort((a, b) => stripPos(a.meaningRaw).localeCompare(stripPos(b.meaningRaw), "ko"));
+    list = [...list].sort((a, b) => displayMeaning(a).localeCompare(displayMeaning(b), "ko"));
   } else if (state.sort === "random") {
     list = [...list].sort((a, b) => hashCode(`${a.id}|${state.viewOrderSeed}`) - hashCode(`${b.id}|${state.viewOrderSeed}`));
   } else {
@@ -262,7 +281,7 @@ function addWrong(item, extra = {}) {
     count: (prev.count || 0) + 1,
     lastWrong: new Date().toISOString(),
     word: item.word,
-    meaningRaw: item.meaningRaw,
+    meaningRaw: displayMeaning(item),
     day: item.day,
     category: item.category,
     ...extra,
@@ -292,7 +311,7 @@ function initElements() {
     "searchInput", "dayGrid", "sortSelect", "pageSizeSelect", "totalWordsStat", "selectedWordsStat", "wrongCountStat", "knownCountStat",
     "listSummary", "wordList", "pageInfo", "flashSummary", "flashcard", "quizCard", "quizModeSelect", "quizDirectionSelect",
     "quizSourceSelect", "quizCountSelect", "quizProgressStat", "quizCorrectStat", "quizWrongStat", "wrongSummary", "wrongList",
-    "loadingPanel", "installAppBtn", "installStatus", "homeTotalWords", "homeSelectedDays"
+    "loadingPanel", "installAppBtn", "installStatus", "homeTotalWords", "homeSelectedDays", "ttsStatus"
   ];
   ids.forEach((id) => { els[id] = document.getElementById(id); });
 }
@@ -319,12 +338,38 @@ function renderStats() {
   renderHome();
 }
 
+function buildWordCard(item) {
+  const known = state.known.has(item.id);
+  const wrong = state.wrongs[item.id];
+  return `
+    <article class="word-card">
+      <div class="word-card-top">
+        <div class="word-meta">
+          <span class="meta-pill">Day ${item.day}</span>
+          ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
+          ${known ? '<span class="meta-pill">암기됨</span>' : ''}
+          ${wrong ? `<span class="meta-pill">오답 ${wrong.count || 1}회</span>` : ''}
+        </div>
+      </div>
+      <div class="word-main">
+        <h4>${escapeHtml(item.word)}</h4>
+        <div class="meaning-cell">${escapeHtml(displayMeaning(item))}</div>
+      </div>
+      <div class="table-actions">
+        <button class="icon-btn" data-action="speak-us" data-id="${item.id}" type="button">US</button>
+        <button class="icon-btn" data-action="speak-uk" data-id="${item.id}" type="button">UK</button>
+        <button class="icon-btn" data-action="known" data-id="${item.id}" type="button">암기</button>
+        <button class="icon-btn" data-action="wrong" data-id="${item.id}" type="button">오답</button>
+      </div>
+    </article>`;
+}
+
 function renderListTab() {
   const list = getSelectedWords();
   if (!hasSelection()) {
-    els.listSummary.textContent = 'DAY를 선택하면 단어장을 불러옵니다.';
-    els.pageInfo.textContent = '-';
-    els.wordList.innerHTML = renderSelectionPrompt('먼저 DAY를 골라 주세요.', '왼쪽 DAY 선택에서 원하는 범위를 체크하면 그때부터 단어장이 표시됩니다.');
+    els.listSummary.textContent = "DAY를 선택하면 단어장을 불러옵니다.";
+    els.pageInfo.textContent = "-";
+    els.wordList.innerHTML = renderSelectionPrompt("먼저 DAY를 골라 주세요.", "오른쪽 위 메뉴에서 원하는 DAY를 체크하면 그때부터 단어장이 표시됩니다.");
     return;
   }
   const totalPages = Math.max(1, Math.ceil(list.length / state.pageSize));
@@ -339,45 +384,7 @@ function renderListTab() {
     return;
   }
 
-  const rows = pageItems.map((item) => {
-    const known = state.known.has(item.id);
-    const wrong = state.wrongs[item.id];
-    return `
-      <div class="table-row">
-        <div>
-          <div class="meta-pill">Day ${item.day}</div>
-        </div>
-        <div>
-          <div class="word-cell">${escapeHtml(item.word)}</div>
-          <div class="subtext">${escapeHtml(item.pos || item.category || "")}</div>
-        </div>
-        <div class="meaning-cell">${escapeHtml(item.meaningRaw)}</div>
-        <div>
-          <div class="subtext">${escapeHtml(item.category || "-")}</div>
-          <div class="wrong-meta" style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-            ${known ? '<span class="meta-pill">암기됨</span>' : ''}
-            ${wrong ? `<span class="meta-pill">오답 ${wrong.count || 1}회</span>` : ''}
-          </div>
-        </div>
-        <div class="table-actions">
-          <button class="icon-btn" data-action="speak-us" data-id="${item.id}" type="button">US</button>
-          <button class="icon-btn" data-action="speak-uk" data-id="${item.id}" type="button">UK</button>
-          <button class="icon-btn" data-action="known" data-id="${item.id}" type="button">암기</button>
-          <button class="icon-btn" data-action="wrong" data-id="${item.id}" type="button">오답</button>
-        </div>
-      </div>`;
-  }).join("");
-
-  els.wordList.innerHTML = `
-    <div class="table-header">
-      <div>DAY</div>
-      <div>단어</div>
-      <div>뜻</div>
-      <div>분류</div>
-      <div style="text-align:right;">동작</div>
-    </div>
-    ${rows}
-  `;
+  els.wordList.innerHTML = pageItems.map(buildWordCard).join("");
 }
 
 function resetFlashOrder() {
@@ -394,13 +401,13 @@ function currentFlashItem() {
 function renderFlashcard() {
   const list = getSelectedWords();
   if (!hasSelection()) {
-    els.flashSummary.textContent = 'DAY를 선택하면 암기 카드를 시작할 수 있습니다.';
-    els.flashcard.innerHTML = renderSelectionPrompt('암기 카드 범위를 먼저 골라 주세요.', '왼쪽에서 DAY를 체크하거나 Day 1부터 바로 시작할 수 있습니다.');
+    els.flashSummary.textContent = "DAY를 선택하면 암기 카드를 시작할 수 있습니다.";
+    els.flashcard.innerHTML = renderSelectionPrompt("암기 카드 범위를 먼저 골라 주세요.", "오른쪽 위 메뉴에서 DAY를 체크하거나 Day 1부터 바로 시작할 수 있습니다.");
     return;
   }
-  els.flashSummary.textContent = `현재 범위 ${list.length.toLocaleString()}개 · ${state.flash.index + 1}/${Math.max(1, state.flash.order.length)}`;
   if (!state.flash.order.length) resetFlashOrder();
   const item = currentFlashItem();
+  els.flashSummary.textContent = `현재 범위 ${list.length.toLocaleString()}개 · ${Math.min(state.flash.index + 1, Math.max(1, state.flash.order.length))}/${Math.max(1, state.flash.order.length)}`;
   if (!item) {
     els.flashcard.innerHTML = `<div class="empty-state">표시할 카드가 없습니다.</div>`;
     return;
@@ -410,12 +417,12 @@ function renderFlashcard() {
   els.flashcard.innerHTML = `
     <div class="wrong-meta">
       <span class="meta-pill">Day ${item.day}</span>
+      ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
       ${known ? '<span class="meta-pill">암기됨</span>' : ''}
       ${wrong ? '<span class="meta-pill">오답노트 포함</span>' : ''}
     </div>
     <div class="flash-word">${escapeHtml(item.word)}</div>
-    <div class="subtext">${escapeHtml(item.category || '')}</div>
-    <div class="flash-answer">${state.flash.reveal ? escapeHtml(item.meaningRaw) : '정답 보기를 눌러 뜻을 확인하세요.'}</div>
+    <div class="flash-answer">${state.flash.reveal ? escapeHtml(displayMeaning(item)) : '정답 보기를 눌러 뜻을 확인하세요.'}</div>
   `;
 }
 
@@ -431,11 +438,11 @@ function getQuizPool() {
 }
 
 function choiceLabel(item, direction) {
-  return direction === "engToKor" ? item.meaningRaw : item.word;
+  return direction === "engToKor" ? displayMeaning(item) : item.word;
 }
 
 function questionLabel(item, direction) {
-  return direction === "engToKor" ? item.word : stripPos(item.meaningRaw);
+  return direction === "engToKor" ? item.word : displayMeaning(item);
 }
 
 function buildQuizChoices(correctItem, pool, direction) {
@@ -449,9 +456,9 @@ function buildQuizChoices(correctItem, pool, direction) {
 function startQuiz() {
   let pool = getQuizPool();
   if (!pool.length) {
-    const message = state.quiz.source === 'wrong'
+    const message = state.quiz.source === "wrong"
       ? '<div class="empty-state">오답노트에 저장된 단어가 없습니다.</div>'
-      : renderSelectionPrompt('시험 범위를 먼저 골라 주세요.', 'DAY를 선택하지 않으면 객관식과 주관식 문제를 만들지 않습니다.');
+      : renderSelectionPrompt("시험 범위를 먼저 골라 주세요.", "DAY를 선택하지 않으면 문제를 만들지 않습니다.");
     els.quizCard.innerHTML = message;
     updateQuizStats();
     return;
@@ -514,11 +521,11 @@ function submitQuizAnswer(payload) {
 
   if (correct) {
     state.quiz.correct += 1;
-    state.quiz.lastFeedback = `정답입니다!\n정답: ${state.quiz.direction === 'engToKor' ? item.meaningRaw : item.word}`;
+    state.quiz.lastFeedback = `정답입니다!\n정답: ${state.quiz.direction === 'engToKor' ? displayMeaning(item) : item.word}`;
   } else {
     state.quiz.wrong += 1;
-    addWrong(item, { source: 'quiz', direction: state.quiz.direction, userAnswer });
-    state.quiz.lastFeedback = `오답입니다.\n내 답: ${userAnswer || '(빈 답안)'}\n정답: ${state.quiz.direction === 'engToKor' ? item.meaningRaw : item.word}`;
+    addWrong(item, { source: "quiz", direction: state.quiz.direction, userAnswer });
+    state.quiz.lastFeedback = `오답입니다.\n내 답: ${userAnswer || '(빈 답안)'}\n정답: ${state.quiz.direction === 'engToKor' ? displayMeaning(item) : item.word}`;
   }
 
   renderQuizCard();
@@ -529,27 +536,27 @@ function submitQuizAnswer(payload) {
 function renderQuizCard() {
   const item = state.quiz.current;
   if (!item) {
-    if (state.quiz.source !== 'wrong' && !hasSelection()) {
-      els.quizCard.innerHTML = renderSelectionPrompt('시험 범위를 먼저 골라 주세요.', '왼쪽 DAY 선택에서 원하는 범위를 체크한 뒤 시험 시작을 눌러 주세요.');
+    if (state.quiz.source !== "wrong" && !hasSelection()) {
+      els.quizCard.innerHTML = renderSelectionPrompt("시험 범위를 먼저 골라 주세요.", "오른쪽 위 메뉴에서 DAY를 체크한 뒤 시험 시작을 눌러 주세요.");
       return;
     }
-    els.quizCard.innerHTML = `<div class="empty-state">${escapeHtml(state.quiz.lastFeedback || '시험 시작을 눌러 주세요.')}</div>`;
+    els.quizCard.innerHTML = `<div class="empty-state">${escapeHtml(state.quiz.lastFeedback || "시험 시작을 눌러 주세요.")}</div>`;
     return;
   }
-  const feedbackClass = state.quiz.answered ? (state.quiz.lastFeedback.startsWith('정답') ? 'good' : 'bad') : '';
+  const feedbackClass = state.quiz.answered ? (state.quiz.lastFeedback.startsWith("정답") ? "good" : "bad") : "";
   const topMeta = `
     <div class="wrong-meta">
       <span class="meta-pill">${state.quiz.pointer + 1} / ${state.quiz.queue.length}</span>
       <span class="meta-pill">Day ${item.day}</span>
-      <span class="meta-pill">${escapeHtml(item.category || '-')}</span>
+      ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
     </div>`;
-  let body = '';
-  if (state.quiz.mode === 'multiple') {
+  let body = "";
+  if (state.quiz.mode === "multiple") {
     body = `
       <div class="choice-grid">
         ${state.quiz.choices.map((choice) => `
           <button class="choice-btn" type="button" data-choice-id="${choice.id}">${escapeHtml(choiceLabel(choice, state.quiz.direction))}</button>
-        `).join('')}
+        `).join("")}
       </div>`;
   } else {
     body = `
@@ -563,34 +570,34 @@ function renderQuizCard() {
     ${topMeta}
     <div class="quiz-question">${escapeHtml(questionLabel(item, state.quiz.direction))}</div>
     ${body}
-    ${state.quiz.answered ? `<div class="feedback ${feedbackClass}">${escapeHtml(state.quiz.lastFeedback)}</div>` : ''}
+    ${state.quiz.answered ? `<div class="feedback ${feedbackClass}">${escapeHtml(state.quiz.lastFeedback)}</div>` : ""}
     <div class="action-bar wrap">
-      <button class="btn" id="quizRevealUs" type="button">🔊 미국식</button>
-      <button class="btn" id="quizRevealUk" type="button">🔊 영국식</button>
+      <button class="btn" id="quizRevealUs" type="button">🔊 US</button>
+      <button class="btn" id="quizRevealUk" type="button">🔊 UK</button>
       ${state.quiz.answered ? '<button class="btn primary" id="quizNextBtnInline" type="button">다음 문제</button>' : ''}
     </div>
   `;
 
-  els.quizCard.querySelectorAll('[data-choice-id]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+  els.quizCard.querySelectorAll("[data-choice-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
       const choice = state.byId.get(btn.dataset.choiceId);
       submitQuizAnswer({ choice: choiceLabel(choice, state.quiz.direction) });
     });
   });
 
-  const input = document.getElementById('subjectiveAnswerInput');
-  const submitBtn = document.getElementById('submitSubjectiveBtn');
+  const input = document.getElementById("subjectiveAnswerInput");
+  const submitBtn = document.getElementById("submitSubjectiveBtn");
   if (input && submitBtn) {
-    submitBtn.addEventListener('click', () => submitQuizAnswer({ text: input.value }));
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submitQuizAnswer({ text: input.value });
+    submitBtn.addEventListener("click", () => submitQuizAnswer({ text: input.value }));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submitQuizAnswer({ text: input.value });
     });
     setTimeout(() => input.focus(), 20);
   }
 
-  document.getElementById('quizRevealUs')?.addEventListener('click', () => speak(item.word, 'en-US'));
-  document.getElementById('quizRevealUk')?.addEventListener('click', () => speak(item.word, 'en-GB'));
-  document.getElementById('quizNextBtnInline')?.addEventListener('click', () => nextQuizQuestion(false));
+  document.getElementById("quizRevealUs")?.addEventListener("click", () => speak(item.word, "en-US"));
+  document.getElementById("quizRevealUk")?.addEventListener("click", () => speak(item.word, "en-GB"));
+  document.getElementById("quizNextBtnInline")?.addEventListener("click", () => nextQuizQuestion(false));
 }
 
 function updateQuizStats() {
@@ -616,92 +623,137 @@ function renderWrongTab() {
         <div class="wrong-card-top">
           <div>
             <h4>${escapeHtml(item.word)}</h4>
-            <div class="subtext" style="margin-top:6px;">${escapeHtml(item.meaningRaw)}</div>
+            <div class="subtext" style="margin-top:8px;">${escapeHtml(displayMeaning(item))}</div>
           </div>
           <div class="wrong-meta">
             <span class="meta-pill">Day ${item.day}</span>
             <span class="meta-pill">오답 ${info.count || 1}회</span>
+            ${displayCategory(item) ? `<span class="meta-pill">${escapeHtml(displayCategory(item))}</span>` : ""}
             ${known ? '<span class="meta-pill">암기됨</span>' : ''}
           </div>
         </div>
         <div class="subtext">최근 오답: ${escapeHtml(formatDateTime(info.lastWrong))}</div>
         <div class="action-bar wrap">
-          <button class="btn" data-action="speak-us" data-id="${item.id}" type="button">🔊 미국식</button>
-          <button class="btn" data-action="speak-uk" data-id="${item.id}" type="button">🔊 영국식</button>
+          <button class="btn" data-action="speak-us" data-id="${item.id}" type="button">🔊 US</button>
+          <button class="btn" data-action="speak-uk" data-id="${item.id}" type="button">🔊 UK</button>
           <button class="btn success" data-action="known" data-id="${item.id}" type="button">암기 체크</button>
           <button class="btn danger" data-action="wrong-remove" data-id="${item.id}" type="button">오답 삭제</button>
         </div>
       </article>`;
-  }).join('');
+  }).join("");
 }
 
 function renderActiveTab() {
-  if (state.tab === 'home') renderHome();
-  if (state.tab === 'list') renderListTab();
-  if (state.tab === 'flash') renderFlashcard();
-  if (state.tab === 'quiz') renderQuizCard();
-  if (state.tab === 'wrong') renderWrongTab();
+  if (state.tab === "home") renderHome();
+  if (state.tab === "list") renderListTab();
+  if (state.tab === "flash") renderFlashcard();
+  if (state.tab === "quiz") renderQuizCard();
+  if (state.tab === "wrong") renderWrongTab();
 }
 
 function setActiveTab(tabName) {
   state.tab = tabName;
-  document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tabName));
-  document.querySelectorAll('[id^="tab-"]').forEach((panel) => panel.classList.add('hidden'));
-  document.getElementById(`tab-${tabName}`)?.classList.remove('hidden');
-  document.getElementById('appShell')?.classList.toggle('home-mode', tabName === 'home');
+  document.querySelectorAll(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabName));
+  document.querySelectorAll("[id^='tab-']").forEach((panel) => panel.classList.add("hidden"));
+  document.getElementById(`tab-${tabName}`)?.classList.remove("hidden");
   location.hash = tabName;
   renderActiveTab();
+  if (window.innerWidth <= 980) setDrawerOpen(false);
 }
 
 function applyHashTab() {
-  const hash = (location.hash || '').replace('#', '').trim();
-  if (['home', 'list', 'flash', 'quiz', 'wrong'].includes(hash)) setActiveTab(hash);
+  const hash = (location.hash || "").replace("#", "").trim();
+  if (["home", "list", "flash", "quiz", "wrong"].includes(hash)) setActiveTab(hash);
+}
+
+function getVoiceScore(voice, targetLang) {
+  const lang = String(voice.lang || "").toLowerCase();
+  const name = String(voice.name || "").toLowerCase();
+  let score = 0;
+  if (lang === targetLang.toLowerCase()) score += 120;
+  if (lang.startsWith(targetLang.toLowerCase())) score += 80;
+  if (lang.startsWith("en")) score += 20;
+
+  if (targetLang === "en-US") {
+    if (/google us english|united states|american|en-us/.test(name)) score += 60;
+    if (/microsoft (aria|jenny|guy|davis)|samantha/.test(name)) score += 35;
+  } else {
+    if (/google uk english|british|united kingdom|england|en-gb|en-uk/.test(name)) score += 60;
+    if (/microsoft (libby|sonia|ryan)|daniel|serena|karen/.test(name)) score += 35;
+  }
+
+  if (voice.localService) score += 5;
+  return score;
+}
+
+function pickBestVoice(targetLang) {
+  const voices = window.speechSynthesis?.getVoices?.() || [];
+  if (!voices.length) return null;
+  const sorted = [...voices]
+    .filter((voice) => String(voice.lang || "").toLowerCase().startsWith("en"))
+    .sort((a, b) => getVoiceScore(b, targetLang) - getVoiceScore(a, targetLang));
+  return sorted[0] || null;
+}
+
+function updateTtsStatus() {
+  if (!("speechSynthesis" in window)) {
+    els.ttsStatus.textContent = "이 브라우저는 TTS를 지원하지 않습니다.";
+    els.ttsStatus.className = "install-status err";
+    return;
+  }
+  const voices = window.speechSynthesis.getVoices();
+  state.voices = voices;
+  state.preferredVoices.us = pickBestVoice("en-US");
+  state.preferredVoices.uk = pickBestVoice("en-GB");
+  const usName = state.preferredVoices.us?.name || "없음";
+  const ukName = state.preferredVoices.uk?.name || "없음";
+  const sameish = state.preferredVoices.us && state.preferredVoices.uk && state.preferredVoices.us.name === state.preferredVoices.uk.name;
+  const tone = sameish || !state.preferredVoices.uk ? "warn" : "ok";
+  let message = `US: ${usName} / UK: ${ukName}`;
+  if (sameish || !state.preferredVoices.uk) message += " · 기기에 영국식 전용 음성이 없어서 차이가 작을 수 있어요.";
+  els.ttsStatus.textContent = message;
+  els.ttsStatus.className = `install-status ${tone}`.trim();
 }
 
 function speak(text, lang) {
   if (!("speechSynthesis" in window)) {
-    alert('이 브라우저는 음성 합성을 지원하지 않습니다.');
+    alert("이 브라우저는 음성 합성을 지원하지 않습니다.");
     return;
   }
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = lang;
-  const voices = window.speechSynthesis.getVoices();
-  const exact = voices.find((v) => v.lang === lang);
-  const starts = voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
-  const fallback = voices.find((v) => v.lang && v.lang.startsWith('en'));
-  if (exact) utter.voice = exact;
-  else if (starts) utter.voice = starts;
-  else if (fallback) utter.voice = fallback;
+  const voice = lang === "en-US" ? state.preferredVoices.us : state.preferredVoices.uk;
+  if (voice) utter.voice = voice;
   utter.rate = 0.92;
   utter.pitch = 1;
   window.speechSynthesis.speak(utter);
 }
 
-function updateInstallStatus(message, tone = '') {
+function updateInstallStatus(message, tone = "") {
   els.installStatus.textContent = message;
   els.installStatus.className = `install-status ${tone}`.trim();
 }
 
 function isStandaloneMode() {
-  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
 async function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) {
-    updateInstallStatus('이 브라우저는 오프라인 설치를 지원하지 않습니다.', 'err');
+  if (!("serviceWorker" in navigator)) {
+    updateInstallStatus("이 브라우저는 오프라인 설치를 지원하지 않습니다.", "err");
     return;
   }
-  if (location.protocol === 'file:') {
-    updateInstallStatus('설치하려면 웹서버나 GitHub Pages에서 열어야 합니다.', 'warn');
+  if (location.protocol === "file:") {
+    updateInstallStatus("설치하려면 웹서버나 GitHub Pages에서 열어야 합니다.", "warn");
     return;
   }
   try {
-    await navigator.serviceWorker.register('./sw.js');
-    updateInstallStatus(isStandaloneMode() ? '앱처럼 실행 중입니다.' : '오프라인 캐시 준비 완료', 'ok');
+    await navigator.serviceWorker.register("./sw.js");
+    updateInstallStatus(isStandaloneMode() ? "앱처럼 실행 중입니다." : "오프라인 캐시 준비 완료", "ok");
   } catch (err) {
     console.error(err);
-    updateInstallStatus('오프라인 캐시 등록에 실패했습니다.', 'err');
+    updateInstallStatus("오프라인 캐시 등록에 실패했습니다.", "err");
   }
 }
 
@@ -709,41 +761,41 @@ function setupInstallPrompt() {
   const btn = els.installAppBtn;
   if (isStandaloneMode()) {
     btn.disabled = true;
-    btn.textContent = '설치됨';
-    updateInstallStatus('홈 화면 앱으로 실행 중입니다.', 'ok');
-  } else if (location.protocol === 'file:') {
+    btn.textContent = "설치됨";
+    updateInstallStatus("홈 화면 앱으로 실행 중입니다.", "ok");
+  } else if (location.protocol === "file:") {
     btn.disabled = true;
-    btn.textContent = '웹서버 필요';
-    updateInstallStatus('GitHub Pages나 localhost에서 열면 설치됩니다.', 'warn');
+    btn.textContent = "웹서버 필요";
+    updateInstallStatus("GitHub Pages나 localhost에서 열면 설치됩니다.", "warn");
   } else {
     btn.disabled = true;
-    btn.textContent = '앱 설치';
-    updateInstallStatus('브라우저가 설치 가능 여부를 확인 중입니다.');
+    btn.textContent = "앱 설치";
+    updateInstallStatus("브라우저가 설치 가능 여부를 확인 중입니다.");
   }
-  window.addEventListener('beforeinstallprompt', (e) => {
+  window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
     btn.disabled = false;
-    updateInstallStatus('홈 화면에 설치할 수 있습니다.', 'ok');
+    updateInstallStatus("홈 화면에 설치할 수 있습니다.", "ok");
   });
-  window.addEventListener('appinstalled', () => {
+  window.addEventListener("appinstalled", () => {
     deferredInstallPrompt = null;
     btn.disabled = true;
-    btn.textContent = '설치됨';
-    updateInstallStatus('설치가 완료되었습니다.', 'ok');
+    btn.textContent = "설치됨";
+    updateInstallStatus("설치가 완료되었습니다.", "ok");
   });
 }
 
 async function tryInstallApp() {
   if (!deferredInstallPrompt) {
-    if (location.protocol === 'file:') updateInstallStatus('웹서버/호스팅에서 열어 주세요.', 'warn');
-    else if (isStandaloneMode()) updateInstallStatus('이미 설치되어 있습니다.', 'ok');
-    else updateInstallStatus('브라우저 메뉴의 홈 화면 추가를 사용해 보세요.', 'warn');
+    if (location.protocol === "file:") updateInstallStatus("웹서버/호스팅에서 열어 주세요.", "warn");
+    else if (isStandaloneMode()) updateInstallStatus("이미 설치되어 있습니다.", "ok");
+    else updateInstallStatus("브라우저 메뉴의 홈 화면 추가를 사용해 보세요.", "warn");
     return;
   }
   deferredInstallPrompt.prompt();
   const { outcome } = await deferredInstallPrompt.userChoice;
-  updateInstallStatus(outcome === 'accepted' ? '설치 요청을 보냈습니다.' : '설치가 취소되었습니다.', outcome === 'accepted' ? 'ok' : 'warn');
+  updateInstallStatus(outcome === "accepted" ? "설치 요청을 보냈습니다." : "설치가 취소되었습니다.", outcome === "accepted" ? "ok" : "warn");
   deferredInstallPrompt = null;
   els.installAppBtn.disabled = true;
 }
@@ -756,68 +808,76 @@ function exportWrongJson() {
       day: item.day,
       category: item.category,
       word: item.word,
-      meaningRaw: item.meaningRaw,
+      meaning: displayMeaning(item),
       wrongCount: info.count || 1,
       lastWrong: info.lastWrong || null,
     };
   });
-  const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' });
+  const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = 'toeic_vocab_wrong_note.json';
+  a.download = "toeic_vocab_wrong_note.json";
   a.click();
   URL.revokeObjectURL(url);
 }
 
 function applyTheme(choice) {
   const html = document.documentElement;
-  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const actual = choice === 'auto' ? (systemDark ? 'dark' : 'light') : choice;
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const actual = choice === "auto" ? (systemDark ? "dark" : "light") : choice;
   html.dataset.theme = actual;
-  document.querySelectorAll('[data-theme-choice]').forEach((btn) => btn.classList.toggle('active', btn.dataset.themeChoice === choice));
+  document.querySelectorAll("[data-theme-choice]").forEach((btn) => btn.classList.toggle("active", btn.dataset.themeChoice === choice));
   const metaTheme = document.querySelector('meta[name="theme-color"]');
-  if (metaTheme) metaTheme.setAttribute('content', actual === 'dark' ? '#0f172a' : '#ffffff');
+  if (metaTheme) metaTheme.setAttribute("content", actual === "dark" ? "#0f172a" : "#ffffff");
 }
 
 function setupTheme() {
-  const choice = localStorage.getItem(STORAGE_KEYS.themeChoice) || 'auto';
+  const choice = localStorage.getItem(STORAGE_KEYS.themeChoice) || "auto";
   applyTheme(choice);
-  document.getElementById('themeToggle').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-theme-choice]');
+  document.getElementById("themeToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-theme-choice]");
     if (!btn) return;
     const nextChoice = btn.dataset.themeChoice;
     saveThemeChoice(nextChoice);
     applyTheme(nextChoice);
   });
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-    if ((localStorage.getItem(STORAGE_KEYS.themeChoice) || 'auto') === 'auto') applyTheme('auto');
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    if ((localStorage.getItem(STORAGE_KEYS.themeChoice) || "auto") === "auto") applyTheme("auto");
   });
 }
 
 function handleItemAction(action, id) {
   const item = state.byId.get(id);
   if (!item) return;
-  if (action === 'speak-us') speak(item.word, 'en-US');
-  if (action === 'speak-uk') speak(item.word, 'en-GB');
-  if (action === 'known') toggleKnown(item.id);
-  if (action === 'wrong') {
-    addWrong(item, { source: 'manual' });
+  if (action === "speak-us") speak(item.word, "en-US");
+  if (action === "speak-uk") speak(item.word, "en-GB");
+  if (action === "known") toggleKnown(item.id);
+  if (action === "wrong") {
+    addWrong(item, { source: "manual" });
     renderActiveTab();
   }
-  if (action === 'wrong-remove') {
+  if (action === "wrong-remove") {
     removeWrong(item.id);
     renderActiveTab();
   }
 }
 
 function bindEvents() {
-  document.getElementById('tabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-btn');
+  document.getElementById("tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab-btn");
     if (btn) setActiveTab(btn.dataset.tab);
   });
-  els.dayGrid.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-day]');
+
+  document.getElementById("menuOpenBtn")?.addEventListener("click", () => setDrawerOpen(true));
+  document.getElementById("drawerCloseBtn")?.addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("drawerBackdrop")?.addEventListener("click", () => setDrawerOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setDrawerOpen(false);
+  });
+
+  els.dayGrid.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-day]");
     if (!btn) return;
     const day = Number(btn.dataset.day);
     if (state.selectedDays.has(day)) state.selectedDays.delete(day);
@@ -829,21 +889,17 @@ function bindEvents() {
     renderStats();
     renderActiveTab();
   });
-  els.wordList.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-action][data-id]');
+  els.wordList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action][data-id]");
     if (btn) handleItemAction(btn.dataset.action, btn.dataset.id);
   });
-  els.wrongList.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-action][data-id]');
+  els.wrongList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action][data-id]");
     if (btn) handleItemAction(btn.dataset.action, btn.dataset.id);
   });
-  document.getElementById('selectAllDaysBtn').addEventListener('click', () => {
-    selectDays(state.days);
-  });
-  document.getElementById('clearDaysBtn').addEventListener('click', () => {
-    selectDays([]);
-  });
-  els.searchInput.addEventListener('input', (e) => {
+  document.getElementById("selectAllDaysBtn").addEventListener("click", () => selectDays(state.days));
+  document.getElementById("clearDaysBtn").addEventListener("click", () => selectDays([]));
+  els.searchInput.addEventListener("input", (e) => {
     const value = e.target.value.trim();
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
@@ -855,124 +911,122 @@ function bindEvents() {
       renderActiveTab();
     }, 120);
   });
-  document.getElementById('clearSearchBtn').addEventListener('click', () => {
-    els.searchInput.value = '';
-    state.search = '';
+  document.getElementById("clearSearchBtn").addEventListener("click", () => {
+    els.searchInput.value = "";
+    state.search = "";
     state.page = 1;
     invalidateFilteredCache();
     resetFlashOrder();
     renderStats();
     renderActiveTab();
   });
-  els.sortSelect.addEventListener('change', (e) => {
+  els.sortSelect.addEventListener("change", (e) => {
     state.sort = e.target.value;
-    if (state.sort === 'random') state.viewOrderSeed = Date.now();
+    if (state.sort === "random") state.viewOrderSeed = Date.now();
     state.page = 1;
     invalidateFilteredCache();
     resetFlashOrder();
     renderStats();
     renderActiveTab();
   });
-  document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
+  els.pageSizeSelect.addEventListener("change", (e) => {
     state.pageSize = Number(e.target.value);
     state.page = 1;
     renderActiveTab();
   });
-  document.getElementById('prevPageBtn').addEventListener('click', () => {
+  document.getElementById("prevPageBtn").addEventListener("click", () => {
     state.page = Math.max(1, state.page - 1);
     renderListTab();
   });
-  document.getElementById('nextPageBtn').addEventListener('click', () => {
+  document.getElementById("nextPageBtn").addEventListener("click", () => {
     const total = Math.max(1, Math.ceil(getSelectedWords().length / state.pageSize));
     state.page = Math.min(total, state.page + 1);
     renderListTab();
   });
-  document.getElementById('shuffleVisibleBtn').addEventListener('click', () => {
-    state.sort = 'random';
+  document.getElementById("shuffleVisibleBtn").addEventListener("click", () => {
+    state.sort = "random";
     state.viewOrderSeed = Date.now();
-    els.sortSelect.value = 'random';
+    els.sortSelect.value = "random";
     invalidateFilteredCache();
     state.page = 1;
     resetFlashOrder();
     renderStats();
     renderListTab();
   });
-  document.getElementById('exportWrongJsonBtn').addEventListener('click', exportWrongJson);
-  document.getElementById('flashPrevBtn').addEventListener('click', () => stepFlash(-1));
-  document.getElementById('flashNextBtn').addEventListener('click', () => stepFlash(1));
-  document.getElementById('flashToggleBtn').addEventListener('click', () => {
+  document.getElementById("exportWrongJsonBtn").addEventListener("click", exportWrongJson);
+  document.getElementById("flashPrevBtn").addEventListener("click", () => stepFlash(-1));
+  document.getElementById("flashNextBtn").addEventListener("click", () => stepFlash(1));
+  document.getElementById("flashToggleBtn").addEventListener("click", () => {
     state.flash.reveal = !state.flash.reveal;
     renderFlashcard();
   });
-  document.getElementById('flashShuffleBtn').addEventListener('click', () => {
+  document.getElementById("flashShuffleBtn").addEventListener("click", () => {
     state.flash.order = shuffle(getSelectedWords().map((item) => item.id));
     state.flash.index = 0;
     state.flash.reveal = false;
     renderFlashcard();
   });
-  document.getElementById('flashResetBtn').addEventListener('click', () => {
+  document.getElementById("flashResetBtn").addEventListener("click", () => {
     resetFlashOrder();
     renderFlashcard();
   });
-  document.getElementById('flashUsBtn').addEventListener('click', () => currentFlashItem() && speak(currentFlashItem().word, 'en-US'));
-  document.getElementById('flashUkBtn').addEventListener('click', () => currentFlashItem() && speak(currentFlashItem().word, 'en-GB'));
-  document.getElementById('flashKnowBtn').addEventListener('click', () => currentFlashItem() && toggleKnown(currentFlashItem().id));
-  document.getElementById('flashMissBtn').addEventListener('click', () => {
+  document.getElementById("flashUsBtn").addEventListener("click", () => currentFlashItem() && speak(currentFlashItem().word, "en-US"));
+  document.getElementById("flashUkBtn").addEventListener("click", () => currentFlashItem() && speak(currentFlashItem().word, "en-GB"));
+  document.getElementById("flashKnowBtn").addEventListener("click", () => currentFlashItem() && toggleKnown(currentFlashItem().id));
+  document.getElementById("flashMissBtn").addEventListener("click", () => {
     const item = currentFlashItem();
     if (!item) return;
-    addWrong(item, { source: 'flash' });
+    addWrong(item, { source: "flash" });
     renderFlashcard();
   });
-  els.quizModeSelect.addEventListener('change', () => state.quiz.mode = els.quizModeSelect.value);
-  els.quizDirectionSelect.addEventListener('change', () => state.quiz.direction = els.quizDirectionSelect.value);
-  els.quizSourceSelect.addEventListener('change', () => state.quiz.source = els.quizSourceSelect.value);
-  els.quizCountSelect.addEventListener('change', () => state.quiz.count = Number(els.quizCountSelect.value));
-  document.getElementById('startQuizBtn').addEventListener('click', startQuiz);
-  document.getElementById('speakQuizUsBtn').addEventListener('click', () => state.quiz.current && speak(state.quiz.current.word, 'en-US'));
-  document.getElementById('speakQuizUkBtn').addEventListener('click', () => state.quiz.current && speak(state.quiz.current.word, 'en-GB'));
-  document.getElementById('practiceWrongBtn').addEventListener('click', () => {
-    setActiveTab('quiz');
-    els.quizSourceSelect.value = 'wrong';
-    els.quizModeSelect.value = 'multiple';
-    state.quiz.source = 'wrong';
-    state.quiz.mode = 'multiple';
+  els.quizModeSelect.addEventListener("change", () => state.quiz.mode = els.quizModeSelect.value);
+  els.quizDirectionSelect.addEventListener("change", () => state.quiz.direction = els.quizDirectionSelect.value);
+  els.quizSourceSelect.addEventListener("change", () => state.quiz.source = els.quizSourceSelect.value);
+  els.quizCountSelect.addEventListener("change", () => state.quiz.count = Number(els.quizCountSelect.value));
+  document.getElementById("startQuizBtn").addEventListener("click", startQuiz);
+  document.getElementById("speakQuizUsBtn").addEventListener("click", () => state.quiz.current && speak(state.quiz.current.word, "en-US"));
+  document.getElementById("speakQuizUkBtn").addEventListener("click", () => state.quiz.current && speak(state.quiz.current.word, "en-GB"));
+  document.getElementById("practiceWrongBtn").addEventListener("click", () => {
+    setActiveTab("quiz");
+    els.quizSourceSelect.value = "wrong";
+    els.quizModeSelect.value = "multiple";
+    state.quiz.source = "wrong";
+    state.quiz.mode = "multiple";
     startQuiz();
   });
-  document.getElementById('clearWrongBtn').addEventListener('click', () => {
-    if (!confirm('오답노트를 전체 삭제할까요?')) return;
+  document.getElementById("clearWrongBtn").addEventListener("click", () => {
+    if (!confirm("오답노트를 전체 삭제할까요?")) return;
     state.wrongs = {};
     saveWrongs();
     renderStats();
     renderWrongTab();
   });
-  document.getElementById('goListBtn').addEventListener('click', () => setActiveTab('list'));
-  document.getElementById('homeOpenListBtn')?.addEventListener('click', () => setActiveTab('list'));
-  document.getElementById('homeOpenFlashBtn')?.addEventListener('click', () => setActiveTab('flash'));
-  document.getElementById('homeOpenQuizBtn')?.addEventListener('click', () => setActiveTab('quiz'));
-  document.getElementById('homeOpenWrongBtn')?.addEventListener('click', () => setActiveTab('wrong'));
-  document.getElementById('goFlashBtn').addEventListener('click', () => setActiveTab('flash'));
-  document.getElementById('goQuizBtn').addEventListener('click', () => setActiveTab('quiz'));
-  document.getElementById('goWrongBtn').addEventListener('click', () => setActiveTab('wrong'));
-  document.addEventListener('click', (e) => {
-    const presetBtn = e.target.closest('[data-selection-preset]');
+  document.getElementById("homeOpenListBtn")?.addEventListener("click", () => setActiveTab("list"));
+  document.getElementById("homeOpenFlashBtn")?.addEventListener("click", () => setActiveTab("flash"));
+  document.getElementById("homeOpenQuizBtn")?.addEventListener("click", () => setActiveTab("quiz"));
+  document.getElementById("homeOpenWrongBtn")?.addEventListener("click", () => setActiveTab("wrong"));
+
+  document.addEventListener("click", (e) => {
+    const presetBtn = e.target.closest("[data-selection-preset]");
     if (!presetBtn) return;
     const preset = presetBtn.dataset.selectionPreset;
-    if (preset === 'day1') {
+    if (preset === "day1") {
       selectDays([1]);
-      if (state.tab === 'home') setActiveTab('list');
+      if (state.tab === "home") setActiveTab("list");
     }
-    if (preset === 'all') {
+    if (preset === "all") {
       selectDays(state.days);
-      if (state.tab === 'home') setActiveTab('list');
+      if (state.tab === "home") setActiveTab("list");
     }
-    if (preset === 'home') setActiveTab('home');
+    if (preset === "menu") setDrawerOpen(true);
   });
-  els.installAppBtn.addEventListener('click', tryInstallApp);
-  window.addEventListener('hashchange', applyHashTab);
+
+  els.installAppBtn.addEventListener("click", tryInstallApp);
+  window.addEventListener("hashchange", applyHashTab);
 }
 
 async function loadData() {
-  const response = await fetch('./toeic_vocab_data.json', { cache: 'force-cache' });
+  const response = await fetch("./toeic_vocab_data.json", { cache: "force-cache" });
   if (!response.ok) throw new Error(`단어 데이터를 불러오지 못했습니다: ${response.status}`);
   const data = await response.json();
   buildDataIndexes(data);
@@ -988,12 +1042,16 @@ async function boot() {
     renderDayGrid();
     renderStats();
     resetFlashOrder();
-    els.loadingPanel.classList.add('hidden');
-    setActiveTab('home');
+    els.loadingPanel.classList.add("hidden");
+    setActiveTab("home");
     applyHashTab();
     registerServiceWorker();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = () => { state.voices = window.speechSynthesis.getVoices(); };
+    if ("speechSynthesis" in window) {
+      updateTtsStatus();
+      window.speechSynthesis.onvoiceschanged = () => updateTtsStatus();
+      setTimeout(updateTtsStatus, 500);
+    } else {
+      updateTtsStatus();
     }
   } catch (err) {
     console.error(err);
